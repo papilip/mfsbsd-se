@@ -1,0 +1,73 @@
+= mfsbsd-se
+:toc: left
+:toc-title: Table des matières
+
+Images https://github.com/mmatuska/mfsbsd[mfsBSD] SE (« special
+edition » : avec `base.txz` et `kernel.txz` de la release embarqués)
+pour les releases FreeBSD que le projet mfsBSD ne publie pas, ou pas encore.
+
+Le projet mfsBSD est tenu par une seule personne. Sa dernière publication
+(20 janvier 2026) s'arrête à 15.0, sans 14.4 ni 15.1. Ce dépôt reprend
+exactement sa construction (`ci/ci.sh`, cible `build-se`) pour d'autres
+versions, sans rien y changer : mêmes sources, même mot de passe root par
+défaut (`mfsroot`), même nom d'image.
+
+L'image sert notamment à https://github.com/aloli-crystal/beryl-cli[beryl]
+(`beryl bootstrap`), qui installe FreeBSD depuis le système de secours d'un
+hébergeur.
+
+== Construire et publier
+
+Onglet *Actions* → *Image mfsBSD SE* → *Run workflow*, version `15.1`, ou :
+
+[source,sh]
+----
+gh workflow run build.yml --repo papilip/mfsbsd-se -f version=15.1
+----
+
+Le flux (`.github/workflows/build.yml`) :
+
+. démarre une machine virtuelle FreeBSD de la version demandée
+  (https://github.com/vmactions/freebsd-vm[vmactions/freebsd-vm]) ;
+. y lance `build-mfsbsd-se.sh` : sources de mfsBSD au commit de sa
+  dernière publication, `base.txz` et `kernel.txz` de la release depuis
+  `download.freebsd.org` (https), vérifiés par le `MANIFEST` de la release,
+  puis `make iso SE=1 ROOTHACK=1` ;
+. publie la release `mfsbsd-se-<version>` : l'image
+  `mfsbsd-se-<version>-RELEASE-amd64.iso`, son empreinte (`.sha256`) et le
+  journal de construction.
+
+Une release existante n'est jamais écrasée : pour reconstruire, supprimez-la
+d'abord. Les actions sont épinglées par commit.
+
+== Construire à la main
+
+En root, sur une machine FreeBSD de la même majeure que l'image :
+
+[source,sh]
+----
+sh build-mfsbsd-se.sh 15.1
+----
+
+L'image et son empreinte sont écrites dans `/var/tmp/mfsbsd-se-15.1/`.
+Variables : `MFSBSD_REF` (commit de mfsBSD), `FREEBSD_MIRROR`, `WORKDIR`.
+
+== Utiliser l'image avec beryl
+
+Dans le `_defaults.yml` de la société (configuration beryl), d'après les
+notes de la release :
+
+[source,yaml]
+----
+mfsbsd_url: https://github.com/papilip/mfsbsd-se/releases/download/mfsbsd-se-15.1/mfsbsd-se-15.1-RELEASE-amd64.iso
+mfsbsd_version: "15.1"
+mfsbsd_sha256: <empreinte de la release>
+----
+
+beryl vérifie l'empreinte dans le système de secours avant de démarrer
+l'image.
+
+== Licence
+
+Script et flux : BSD-2-Clause (`LICENSE`). Les images contiennent mfsBSD
+(BSD-2-Clause) et FreeBSD (licences du projet FreeBSD).

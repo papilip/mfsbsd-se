@@ -1,0 +1,123 @@
+# Construit une image mfsBSD SE pour une release FreeBSD, dans une machine
+# virtuelle FreeBSD de cette release, et la publie en release
+# `mfsbsd-se-<version>` de ce dépôt (image + empreinte sha256).
+#
+# Lancement : onglet Actions → « Image mfsBSD SE » → Run workflow, ou
+#   gh workflow run build.yml --repo papilip/mfsbsd-se -f version=15.1
+#
+# Actions épinglées par commit (une étiquette peut être déplacée).
+name: Image mfsBSD SE
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release FreeBSD (X.Y, ex. 15.1)"
+        required: true
+        default: "15.1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mfsbsd-se-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: FreeBSD ${{ github.event.inputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - name: Version demandée
+        run: |
+          printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+$' || {
+            echo "version X.Y attendue : $VERSION" >&2
+            exit 1
+          }
+
+      - name: Pas de release existante
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "mfsbsd-se-$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "la release mfsbsd-se-$VERSION existe déjà : supprimez-la d'abord pour reconstruire" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Construction dans FreeBSD ${{ github.event.inputs.version }}
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: ${{ github.event.inputs.version }}
+          usesh: true
+          envs: VERSION
+          prepare: pkg install -y git
+          run: |
+            freebsd-version -kru
+            mkdir -p out
+            # Pas de « | tee » : son code de retour masquerait un échec.
+            rc=0
+            sh build-mfsbsd-se.sh "$VERSION" "$PWD/out" >out/build.log 2>&1 || rc=$?
+            cat out/build.log
+            exit $rc
+
+      - name: Image et empreinte
+        run: |
+          iso="mfsbsd-se-$VERSION-RELEASE-amd64.iso"
+          test -s "out/$iso"
+          (cd out && sha256sum -c "$iso.sha256")
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mfsbsd-se-${{ github.event.inputs.version }}
+          path: out/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mfsbsd-se-${{ github.event.inputs.version }}
+          path: out
+
+      - name: Notes de la release
+        run: |
+          iso="mfsbsd-se-$VERSION-RELEASE-amd64.iso"
+          sum=$(cut -d' ' -f1 "out/$iso.sha256")
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/mfsbsd-se-$VERSION/$iso"
+          {
+            echo "Image mfsBSD SE $VERSION-RELEASE (amd64), construite par le flux de ce dépôt."
+            echo
+            echo "sha256 : \`$sum\`"
+            echo
+            echo "Configuration beryl (\`_defaults.yml\` de la société) :"
+            echo
+            echo '```yaml'
+            echo "mfsbsd_url: $url"
+            echo "mfsbsd_version: \"$VERSION\""
+            echo "mfsbsd_sha256: $sum"
+            echo '```'
+            echo
+            echo "Journal de construction : \`build.log\`."
+          } >notes.md
+
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: mfsbsd-se-${{ github.event.inputs.version }}
+          name: mfsBSD SE ${{ github.event.inputs.version }}
+          body_path: notes.md
+          make_latest: true
+          files: |
+            out/mfsbsd-se-${{ github.event.inputs.version }}-RELEASE-amd64.iso
+            out/mfsbsd-se-${{ github.event.inputs.version }}-RELEASE-amd64.iso.sha256
+            out/build.log
