@@ -40,6 +40,55 @@ Le flux (`.github/workflows/build.yml`) :
 Une release existante n'est jamais écrasée : pour reconstruire, supprimez-la
 d'abord. Les actions sont épinglées par commit.
 
+== Nouvelle version de FreeBSD
+
+Une image par release, publiée une seule fois (`mfsbsd-se-<version>`).
+
+. *Sources de mfsBSD.* `build-mfsbsd-se.sh` épingle un commit de mfsBSD
+  (`MFSBSD_REF`, aujourd'hui celui de sa publication du 20 janvier 2026).
+  Pour une nouvelle majeure, regarder si le projet a corrigé sa
+  construction depuis (https://github.com/mmatuska/mfsbsd/commits[ses
+  commits]) ; si oui, relever `MFSBSD_REF` sur le commit voulu, commiter
+  et pousser *avant* de lancer le flux. Pour une mineure, le commit épinglé
+  suffit en général.
+. *Machine virtuelle.* Vérifier que
+  https://github.com/vmactions/freebsd-vm#readme[vmactions/freebsd-vm]
+  propose la release. Sinon, construire à la main (ci-dessous) sur une
+  machine FreeBSD de la même majeure, puis publier à la main la release
+  `mfsbsd-se-<version>` avec l'image et son `.sha256`.
+. *Construction et publication* :
++
+[source,sh]
+----
+gh workflow run build.yml --repo papilip/mfsbsd-se -f version=16.0
+gh run watch --repo papilip/mfsbsd-se
+----
++
+Pour reconstruire une version déjà publiée (correctif de mfsBSD, image
+défectueuse) : supprimer sa release et son étiquette, puis relancer.
+L'empreinte change : la configuration des utilisateurs de l'image est à
+mettre à jour.
++
+[source,sh]
+----
+gh release delete mfsbsd-se-16.0 --repo papilip/mfsbsd-se --cleanup-tag
+----
+. *Contrôle.* Vérifier l'empreinte et le contenu de l'image publiée :
++
+[source,sh]
+----
+B=https://github.com/papilip/mfsbsd-se/releases/download/mfsbsd-se-16.0
+curl -fLO $B/mfsbsd-se-16.0-RELEASE-amd64.iso -fLO $B/mfsbsd-se-16.0-RELEASE-amd64.iso.sha256
+shasum -a 256 -c mfsbsd-se-16.0-RELEASE-amd64.iso.sha256
+bsdtar tf mfsbsd-se-16.0-RELEASE-amd64.iso | grep -E 'base.txz|kernel.txz|mfsroot'
+----
+. *Utilisation.* Les notes de la release donnent les trois lignes de
+  configuration beryl (`mfsbsd_url`, `mfsbsd_version`, `mfsbsd_sha256`).
+  Côté beryl, la marche à suivre complète (quand une nouvelle image est
+  nécessaire, déclaration dans chaque société, validation) est dans
+  `docs/mfsbsd-maison.adoc` de
+  https://github.com/aloli-crystal/beryl-cli[beryl-cli].
+
 == Construire à la main
 
 En root, sur une machine FreeBSD de la même majeure que l'image :
